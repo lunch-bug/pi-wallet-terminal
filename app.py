@@ -7,10 +7,14 @@ from mnemonic import Mnemonic
 from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 import threading
 import time
+import os
 
-app = Flask(__name__, template_folder="templates")  # Serve HTML from /templates
+app = Flask(__name__, template_folder="templates")
 CORS(app)
-limiter = Limiter(app, key_func=get_remote_address)
+
+# Flask-Limiter (fixed for new versions)
+limiter = Limiter(key_func=get_remote_address)
+limiter.init_app(app)
 
 HORIZON_URL = "https://api.mainnet.minepi.com"
 NETWORK_PASSPHRASE = "Pi Mainnet"
@@ -56,7 +60,7 @@ def index():
 
 # ----------------- Transfer Endpoint -----------------
 @app.route("/transfer", methods=["POST"])
-@limiter.limit("3/minute")
+@limiter.limit("3 per minute")
 def transfer():
     try:
         data = request.get_json()
@@ -67,12 +71,12 @@ def transfer():
 
         mnemo = Mnemonic("english")
         if not mnemo.check(passphrase):
-            return jsonify({"status": "error", "message": ">> wrong passphrase"}), 400
+            return jsonify({"status": "error", "message": "wrong passphrase"}), 400
 
         try:
             keypair = get_keypair_from_mnemonic(passphrase)
         except Exception:
-            return jsonify({"status": "error", "message": ">> error with public key"}), 400
+            return jsonify({"status": "error", "message": "error with public key"}), 400
 
         public_key = keypair.public_key
         secret_key = keypair.secret
@@ -80,20 +84,20 @@ def transfer():
         try:
             server.load_account(destination)
         except Exception:
-            return jsonify({"status": "error", "message": ">> error with public key"}), 400
+            return jsonify({"status": "error", "message": "error with public key"}), 400
 
         wallet_lock = get_wallet_lock(public_key)
         if not wallet_lock.acquire(blocking=False):
-            return jsonify({"status": "error", "message": ">> wallet is busy with another operation"}), 429
+            return jsonify({"status": "error", "message": "wallet is busy with another operation"}), 429
 
         def process_transaction():
             try:
                 if mode == "unlocked":
                     available, _ = get_balances(public_key)
                     if available is None:
-                        return jsonify({"status": "error", "message": ">> error with public key"}), 400
+                        return jsonify({"status": "error", "message": "error with public key"}), 400
                     if available < amount:
-                        return jsonify({"status": "error", "message": ">> insufficient Pi"}), 400
+                        return jsonify({"status": "error", "message": "insufficient Pi"}), 400
                     return send_transaction(public_key, secret_key, destination, amount)
 
                 elif mode == "wait_locked":
@@ -101,23 +105,23 @@ def transfer():
                     while time.time() - start_time <= 3600:
                         available, _ = get_balances(public_key)
                         if available is None:
-                            return jsonify({"status": "error", "message": ">> error with public key"}), 400
+                            return jsonify({"status": "error", "message": "error with public key"}), 400
                         if available >= amount:
                             return send_transaction(public_key, secret_key, destination, amount)
-                    return jsonify({"status": "error", "message": ">> bot timed out"}), 408
+                    return jsonify({"status": "error", "message": "bot timed out"}), 408
 
                 else:
-                    return jsonify({"status": "error", "message": ">> invalid mode"}), 400
+                    return jsonify({"status": "error", "message": "invalid mode"}), 400
 
             except Exception as e:
-                return jsonify({"status": "error", "message": ">> system crashed please restart", "debug": str(e)}), 500
+                return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
             finally:
                 wallet_lock.release()
 
         return process_transaction()
 
     except Exception as e:
-        return jsonify({"status": "error", "message": ">> system crashed please restart", "debug": str(e)}), 500
+        return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
 # ----------------- Send Transaction -----------------
 def send_transaction(public_key, secret_key, destination, amount):
@@ -135,11 +139,11 @@ def send_transaction(public_key, secret_key, destination, amount):
         )
         tx.sign(secret_key)
         response = server.submit_transaction(tx)
-        return jsonify({"status": "success", "message": ">> transaction successful", "tx": response}), 200
+        return jsonify({"status": "success", "message": "transaction successful", "tx": response}), 200
     except Exception as e:
-        return jsonify({"status": "error", "message": ">> system crashed please restart", "debug": str(e)}), 500
+        return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-# ----------------- Check Balance -----------------
+# ----------------- Check Balance for Logs -----------------
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
     try:
@@ -159,6 +163,7 @@ def check_balance():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ----------------- Run App -----------------
+# ----------------- Run Server -----------------
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))  # For Render or localhost
+    app.run(host="0.0.0.0", port=port)
