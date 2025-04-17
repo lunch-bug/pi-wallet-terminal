@@ -8,11 +8,12 @@ from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 import threading
 import time
 import os
+import re
 
 app = Flask(__name__, template_folder="templates")
 CORS(app)
 
-# Flask-Limiter (fixed for new versions)
+# Flask-Limiter: safe usage
 limiter = Limiter(key_func=get_remote_address)
 limiter.init_app(app)
 
@@ -25,14 +26,11 @@ thread_lock = threading.Lock()
 
 # ----------------- Key Derivation -----------------
 def get_keypair_from_mnemonic(mnemonic: str):
-    try:
-        seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
-        bip44_ctx = Bip44.FromSeed(seed_bytes, Bip44Coins.STELLAR) \
-                         .Purpose().Coin().Account(0).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
-        private_key = bip44_ctx.PrivateKey().Raw().ToBytes()
-        return Keypair.from_raw_ed25519_seed(private_key)
-    except Exception as e:
-        raise ValueError("Mnemonic to keypair conversion failed: " + str(e))
+    seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
+    bip44_ctx = Bip44.FromSeed(seed_bytes, Bip44Coins.STELLAR) \
+                     .Purpose().Coin().Account(0).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
+    private_key = bip44_ctx.PrivateKey().Raw().ToBytes()
+    return Keypair.from_raw_ed25519_seed(private_key)
 
 # ----------------- Balance Check -----------------
 def get_balances(public_key):
@@ -52,6 +50,10 @@ def get_wallet_lock(wallet):
         if wallet not in wallet_locks:
             wallet_locks[wallet] = threading.Lock()
         return wallet_locks[wallet]
+
+# ----------------- Validate Public Key Format -----------------
+def is_valid_public_key(pk):
+    return bool(re.match(r"^G[A-Z2-7]{55}$", pk))
 
 # ----------------- Serve Frontend -----------------
 @app.route("/")
@@ -81,10 +83,8 @@ def transfer():
         public_key = keypair.public_key
         secret_key = keypair.secret
 
-        try:
-            server.load_account(destination)
-        except Exception:
-            return jsonify({"status": "error", "message": "error with public key"}), 400
+        if not is_valid_public_key(destination):
+            return jsonify({"status": "error", "message": "Invalid public key format"}), 400
 
         wallet_lock = get_wallet_lock(public_key)
         if not wallet_lock.acquire(blocking=False):
@@ -108,6 +108,7 @@ def transfer():
                             return jsonify({"status": "error", "message": "error with public key"}), 400
                         if available >= amount:
                             return send_transaction(public_key, secret_key, destination, amount)
+                        time.sleep(2)  # small delay between checks
                     return jsonify({"status": "error", "message": "bot timed out"}), 408
 
                 else:
@@ -143,7 +144,7 @@ def send_transaction(public_key, secret_key, destination, amount):
     except Exception as e:
         return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-# ----------------- Check Balance for Logs -----------------
+# ----------------- Balance Check for UI Logs -----------------
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
     try:
@@ -163,7 +164,7 @@ def check_balance():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ----------------- Run Server -----------------
+# ----------------- Run App -----------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # For Render or localhost
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
