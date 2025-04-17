@@ -1,0 +1,6 @@
+flask
+flask-cors
+flask-limiter
+stellar-sdk
+mnemonic
+bip_utils
