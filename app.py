@@ -15,14 +15,15 @@ CORS(app)
 limiter = Limiter(key_func=get_remote_address)
 limiter.init_app(app)
 
-HORIZON_URL = "https://api.mainnet.minepi.com"
-NETWORK_PASSPHRASE = "Pi Mainnet"
+# Stellar Public Mainnet (if you need Pi, change URL)
+HORIZON_URL = "https://horizon.stellar.org"
+NETWORK_PASSPHRASE = "Public Global Stellar Network ; September 2015"
 server = Server(horizon_url=HORIZON_URL)
 
 wallet_locks = {}
 thread_lock = threading.Lock()
 
-# ----------------- Key Derivation -----------------
+# Derive keypair from mnemonic
 def get_keypair_from_mnemonic(mnemonic: str):
     seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
     bip44_ctx = Bip44.FromSeed(seed_bytes, Bip44Coins.STELLAR) \
@@ -30,7 +31,7 @@ def get_keypair_from_mnemonic(mnemonic: str):
     private_key = bip44_ctx.PrivateKey().Raw().ToBytes()
     return Keypair.from_raw_ed25519_seed(private_key)
 
-# ----------------- Balance Check -----------------
+# Get wallet balance
 def get_balances(public_key):
     try:
         account = server.load_account(public_key)
@@ -42,26 +43,26 @@ def get_balances(public_key):
     except Exception:
         return None, None
 
-# ----------------- Wallet Locking -----------------
+# Lock per wallet
 def get_wallet_lock(wallet):
     with thread_lock:
         if wallet not in wallet_locks:
             wallet_locks[wallet] = threading.Lock()
         return wallet_locks[wallet]
 
-# ----------------- Stellar Public Key Validation -----------------
+# Validate Stellar address format
 def is_valid_public_key(pk):
     try:
         return StrKey.is_valid_ed25519_public_key(pk)
     except Exception:
         return False
 
-# ----------------- Serve Frontend -----------------
+# Frontend page
 @app.route("/")
 def index():
     return render_template("index.html")
 
-# ----------------- Transfer Endpoint -----------------
+# Handle transfers
 @app.route("/transfer", methods=["POST"])
 @limiter.limit("3 per minute")
 def transfer():
@@ -75,31 +76,33 @@ def transfer():
         # Validate mnemonic
         mnemo = Mnemonic("english")
         if not mnemo.check(passphrase):
-            return jsonify({"status": "error", "message": "wrong passphrase"}), 400
+            return jsonify({"status": "error", "message": "incorrect 24-word wallet passphrase"}), 400
 
+        # Try to derive keypair from passphrase
         try:
             keypair = get_keypair_from_mnemonic(passphrase)
         except Exception:
-            return jsonify({"status": "error", "message": "error with public key"}), 400
+            return jsonify({"status": "error", "message": "incorrect 24-word wallet passphrase"}), 400
 
         public_key = keypair.public_key
         secret_key = keypair.secret
 
-        # Validate destination public key using Stellar SDK
+        # Validate destination public key
         if not is_valid_public_key(destination):
-            return jsonify({"status": "error", "message": "Invalid public key format"}), 400
+            return jsonify({"status": "error", "message": "incorrect receiver address"}), 400
 
-        # Acquire wallet lock
+        # Lock this wallet
         wallet_lock = get_wallet_lock(public_key)
         if not wallet_lock.acquire(blocking=False):
-            return jsonify({"status": "error", "message": "wallet is busy with another operation"}), 429
+            return jsonify({"status": "error", "message": "wallet is busy, try again shortly"}), 429
 
+        # Process transaction logic
         def process_transaction():
             try:
                 if mode == "unlocked":
                     available, _ = get_balances(public_key)
                     if available is None:
-                        return jsonify({"status": "error", "message": "error with public key"}), 400
+                        return jsonify({"status": "error", "message": "system crashed please restart"}), 500
                     if available < amount:
                         return jsonify({"status": "error", "message": "insufficient Pi"}), 400
                     return send_transaction(public_key, secret_key, destination, amount)
@@ -109,7 +112,7 @@ def transfer():
                     while time.time() - start_time <= 3600:
                         available, _ = get_balances(public_key)
                         if available is None:
-                            return jsonify({"status": "error", "message": "error with public key"}), 400
+                            return jsonify({"status": "error", "message": "system crashed please restart"}), 500
                         if available >= amount:
                             return send_transaction(public_key, secret_key, destination, amount)
                         time.sleep(2)
@@ -119,16 +122,22 @@ def transfer():
                     return jsonify({"status": "error", "message": "invalid mode"}), 400
 
             except Exception as e:
-                return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
+                print("CRASH DEBUG:", str(e))
+                return jsonify({
+                    "status": "error",
+                    "message": "system crashed please restart",
+                    "debug": str(e)
+                }), 500
             finally:
                 wallet_lock.release()
 
         return process_transaction()
 
     except Exception as e:
+        print("CRASH DEBUG:", str(e))
         return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-# ----------------- Send Transaction -----------------
+# Send a Stellar transaction
 def send_transaction(public_key, secret_key, destination, amount):
     try:
         account = server.load_account(public_key)
@@ -146,9 +155,10 @@ def send_transaction(public_key, secret_key, destination, amount):
         response = server.submit_transaction(tx)
         return jsonify({"status": "success", "message": "transaction successful", "tx": response}), 200
     except Exception as e:
+        print("SEND TX ERROR:", str(e))
         return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-# ----------------- Balance Check Endpoint -----------------
+# Endpoint for balance checking
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
     try:
@@ -157,7 +167,7 @@ def check_balance():
 
         mnemo = Mnemonic("english")
         if not mnemo.check(passphrase):
-            return jsonify({"status": "error", "message": "Invalid passphrase"}), 400
+            return jsonify({"status": "error", "message": "incorrect 24-word wallet passphrase"}), 400
 
         keypair = get_keypair_from_mnemonic(passphrase)
         public_key = keypair.public_key
@@ -168,7 +178,7 @@ def check_balance():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ----------------- Run Server -----------------
+# Run server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
