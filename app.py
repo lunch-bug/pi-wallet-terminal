@@ -1,5 +1,4 @@
-from flask import render_template
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
@@ -9,7 +8,7 @@ from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 import threading
 import time
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")  # Serve HTML from /templates
 CORS(app)
 limiter = Limiter(app, key_func=get_remote_address)
 
@@ -50,7 +49,12 @@ def get_wallet_lock(wallet):
             wallet_locks[wallet] = threading.Lock()
         return wallet_locks[wallet]
 
-# ----------------- Transfer Route -----------------
+# ----------------- Serve Frontend -----------------
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+# ----------------- Transfer Endpoint -----------------
 @app.route("/transfer", methods=["POST"])
 @limiter.limit("3/minute")
 def transfer():
@@ -61,7 +65,6 @@ def transfer():
         amount = float(data.get("amount"))
         mode = data.get("mode", "")
 
-        # Validate mnemonic
         mnemo = Mnemonic("english")
         if not mnemo.check(passphrase):
             return jsonify({"status": "error", "message": ">> wrong passphrase"}), 400
@@ -74,7 +77,6 @@ def transfer():
         public_key = keypair.public_key
         secret_key = keypair.secret
 
-        # Validate destination
         try:
             server.load_account(destination)
         except Exception:
@@ -84,7 +86,6 @@ def transfer():
         if not wallet_lock.acquire(blocking=False):
             return jsonify({"status": "error", "message": ">> wallet is busy with another operation"}), 429
 
-        # ----------------- Transaction Logic -----------------
         def process_transaction():
             try:
                 if mode == "unlocked":
@@ -138,7 +139,7 @@ def send_transaction(public_key, secret_key, destination, amount):
     except Exception as e:
         return jsonify({"status": "error", "message": ">> system crashed please restart", "debug": str(e)}), 500
 
-# ----------------- Check Balance for Frontend Logs -----------------
+# ----------------- Check Balance -----------------
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
     try:
@@ -158,6 +159,6 @@ def check_balance():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ----------------- Run Server -----------------
+# ----------------- Run App -----------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
