@@ -1,7 +1,7 @@
 Flask
 flask-cors
 flask-limiter
-stellar-sdk
+stellar-sdk>=8.2.2
 mnemonic
 bip-utils
 gunicorn
