@@ -1,7 +1,7 @@
 Flask==2.3.3
 flask-cors==4.0.0
 flask-limiter==3.5.0
-stellar-sdk==8.2.2
+stellar-sdk==12.2.1
 mnemonic==0.20
 bip-utils==2.6.0
 gunicorn==21.2.0
