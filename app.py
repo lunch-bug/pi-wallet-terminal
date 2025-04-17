@@ -2,18 +2,16 @@ from flask import Flask, request, jsonify, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
-from stellar_sdk import Keypair, Server, TransactionBuilder, Asset
+from stellar_sdk import Keypair, Server, TransactionBuilder, Asset, StrKey
 from mnemonic import Mnemonic
 from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 import threading
 import time
 import os
-import re
 
 app = Flask(__name__, template_folder="templates")
 CORS(app)
 
-# Flask-Limiter: safe usage
 limiter = Limiter(key_func=get_remote_address)
 limiter.init_app(app)
 
@@ -51,9 +49,12 @@ def get_wallet_lock(wallet):
             wallet_locks[wallet] = threading.Lock()
         return wallet_locks[wallet]
 
-# ----------------- Validate Public Key Format -----------------
+# ----------------- Stellar Public Key Validation -----------------
 def is_valid_public_key(pk):
-    return bool(re.match(r"^G[A-Z2-7]{55}$", pk))
+    try:
+        return StrKey.is_valid_ed25519_public_key(pk)
+    except Exception:
+        return False
 
 # ----------------- Serve Frontend -----------------
 @app.route("/")
@@ -71,6 +72,7 @@ def transfer():
         amount = float(data.get("amount"))
         mode = data.get("mode", "")
 
+        # Validate mnemonic
         mnemo = Mnemonic("english")
         if not mnemo.check(passphrase):
             return jsonify({"status": "error", "message": "wrong passphrase"}), 400
@@ -83,9 +85,11 @@ def transfer():
         public_key = keypair.public_key
         secret_key = keypair.secret
 
+        # Validate destination public key using Stellar SDK
         if not is_valid_public_key(destination):
             return jsonify({"status": "error", "message": "Invalid public key format"}), 400
 
+        # Acquire wallet lock
         wallet_lock = get_wallet_lock(public_key)
         if not wallet_lock.acquire(blocking=False):
             return jsonify({"status": "error", "message": "wallet is busy with another operation"}), 429
@@ -108,7 +112,7 @@ def transfer():
                             return jsonify({"status": "error", "message": "error with public key"}), 400
                         if available >= amount:
                             return send_transaction(public_key, secret_key, destination, amount)
-                        time.sleep(2)  # small delay between checks
+                        time.sleep(2)
                     return jsonify({"status": "error", "message": "bot timed out"}), 408
 
                 else:
@@ -144,7 +148,7 @@ def send_transaction(public_key, secret_key, destination, amount):
     except Exception as e:
         return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-# ----------------- Balance Check for UI Logs -----------------
+# ----------------- Balance Check Endpoint -----------------
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
     try:
@@ -164,7 +168,7 @@ def check_balance():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ----------------- Run App -----------------
+# ----------------- Run Server -----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
