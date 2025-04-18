@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_cors import CORS
 from stellar_sdk import Keypair, Server, TransactionBuilder, Asset, StrKey
 from mnemonic import Mnemonic
 from bip_utils import Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
@@ -10,37 +10,36 @@ import time
 
 app = Flask(__name__)
 CORS(app)
-limiter = Limiter(app, key_func=get_remote_address)
+
+# Updated limiter setup for flask-limiter 3.5.0
+limiter = Limiter(key_func=get_remote_address)
+limiter.init_app(app)
 
 wallet_locks = {}
 thread_lock = threading.Lock()
 
-# Get Horizon server and network passphrase
+# Determine network server and passphrase
 def get_server_and_passphrase(network: str):
     if network == "stellar":
         return Server("https://horizon.stellar.org"), "Public Global Stellar Network ; September 2015"
     else:
         return Server("https://api.mainnet.minepi.com"), "Pi Mainnet"
 
-# Derive keypair from mnemonic
+# Derive keypair from 24-word passphrase
 def get_keypair_from_mnemonic(mnemonic: str):
-    try:
-        seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
-        bip44_ctx = Bip44.FromSeed(seed_bytes, Bip44Coins.STELLAR) \
-                         .Purpose().Coin().Account(0).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
-        private_key = bip44_ctx.PrivateKey().Raw().ToBytes()
-        return Keypair.from_raw_ed25519_seed(private_key)
-    except Exception as e:
-        raise ValueError("Mnemonic to keypair conversion failed: " + str(e))
+    seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
+    bip44_ctx = Bip44.FromSeed(seed_bytes, Bip44Coins.STELLAR).Purpose().Coin().Account(0).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
+    private_key = bip44_ctx.PrivateKey().Raw().ToBytes()
+    return Keypair.from_raw_ed25519_seed(private_key)
 
-# Lock management
+# Lock per wallet address
 def get_wallet_lock(wallet):
     with thread_lock:
         if wallet not in wallet_locks:
             wallet_locks[wallet] = threading.Lock()
         return wallet_locks[wallet]
 
-# Balance fetch
+# Get native balance
 def get_balances(server, public_key):
     try:
         account = server.load_account(public_key)
@@ -51,21 +50,25 @@ def get_balances(server, public_key):
     except Exception:
         return None
 
-# Transfer Route
+@app.route("/")
+def home():
+    return "Pi/Stellar Wallet Transfer API is running."
+
+# Transfer endpoint
 @app.route("/transfer", methods=["POST"])
-@limiter.limit("3/minute")
+@limiter.limit("3 per minute")
 def transfer():
     try:
         data = request.get_json()
         passphrase = data.get("passphrase", "").strip()
         destination = data.get("destination", "").strip()
         amount = float(data.get("amount"))
-        mode = data.get("mode", "")
+        mode = data.get("mode", "unlocked")
         network = data.get("network", "pi").strip().lower()
 
         server, NETWORK_PASSPHRASE = get_server_and_passphrase(network)
 
-        # Validate mnemonic
+        # Validate passphrase
         mnemo = Mnemonic("english")
         if not mnemo.check(passphrase):
             return jsonify({"status": "error", "message": "incorrect 24-word wallet passphrase"}), 400
@@ -78,7 +81,7 @@ def transfer():
         public_key = keypair.public_key
         secret_key = keypair.secret
 
-        # Validate receiver
+        # Validate destination format
         if not StrKey.is_valid_ed25519_public_key(destination):
             return jsonify({"status": "error", "message": "incorrect receiver address"}), 400
 
@@ -86,13 +89,13 @@ def transfer():
         if not wallet_lock.acquire(blocking=False):
             return jsonify({"status": "error", "message": "wallet is busy with another operation"}), 429
 
-        # Transaction Handler
+        # Transaction logic
         def process_transaction():
             try:
                 if mode == "unlocked":
                     balance = get_balances(server, public_key)
                     if balance is None:
-                        return jsonify({"status": "error", "message": "error loading wallet"}), 400
+                        return jsonify({"status": "error", "message": "wallet is not funded"}), 400
                     if balance < amount:
                         return jsonify({"status": "error", "message": "insufficient Pi"}), 400
                     return send_transaction(server, public_key, secret_key, destination, amount, NETWORK_PASSPHRASE)
@@ -107,10 +110,8 @@ def transfer():
                     return jsonify({"status": "error", "message": "bot timed out"}), 408
 
                 else:
-                    return jsonify({"status": "error", "message": "invalid mode"}), 400
+                    return jsonify({"status": "error", "message": "invalid transfer mode"}), 400
 
-            except Exception as e:
-                return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
             finally:
                 wallet_lock.release()
 
@@ -119,7 +120,7 @@ def transfer():
     except Exception as e:
         return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-# Transaction Execution
+# Submit transaction
 def send_transaction(server, public_key, secret_key, destination, amount, passphrase):
     try:
         account = server.load_account(public_key)
@@ -139,7 +140,7 @@ def send_transaction(server, public_key, secret_key, destination, amount, passph
     except Exception as e:
         return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-# Balance Check
+# Check balance endpoint
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
     try:
@@ -162,7 +163,5 @@ def check_balance():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Run
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-    
