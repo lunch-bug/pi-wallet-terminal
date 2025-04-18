@@ -20,10 +20,13 @@ NETWORK_PASSPHRASE = "Pi Mainnet"
 server = Server(horizon_url=HORIZON_URL)
 
 def get_keypair_from_mnemonic(mnemonic):
-    seed = Bip39SeedGenerator(mnemonic).Generate()
-    path = Bip44.FromSeed(seed, Bip44Coins.STELLAR).Purpose().Coin().Account(0).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
-    raw_key = path.PrivateKey().Raw().ToBytes()
-    return Keypair.from_raw_ed25519_seed(raw_key)
+    try:
+        seed = Bip39SeedGenerator(mnemonic).Generate()
+        path = Bip44.FromSeed(seed, Bip44Coins.STELLAR).Purpose().Coin().Account(0).Change(Bip44Changes.CHAIN_EXT).AddressIndex(0)
+        raw_key = path.PrivateKey().Raw().ToBytes()
+        return Keypair.from_raw_ed25519_seed(raw_key)
+    except Exception as e:
+        raise ValueError("Mnemonic error: " + str(e))
 
 def get_balances(public_key):
     try:
@@ -108,38 +111,20 @@ def transfer():
     except Exception as e:
         return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
 
-def send_transaction(public_key, secret_key, destination, amount):
-    try:
-        account = server.load_account(public_key)
-        tx = (
-            TransactionBuilder(
-                source_account=account,
-                network_passphrase=NETWORK_PASSPHRASE,
-                base_fee=100
-            )
-            .append_payment_op(destination=destination, amount=str(amount), asset=Asset.native())
-            .set_timeout(60)
-            .build()
-        )
-        tx.sign(secret_key)
-        result = server.submit_transaction(tx)
-        return jsonify({"status": "success", "message": "transaction successful", "tx": result}), 200
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": "system crashed please restart",
-            "debug": str(e)
-        }), 500
-
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
     try:
         passphrase = request.get_json().get("passphrase", "").strip()
         if not Mnemonic("english").check(passphrase):
             return jsonify({"status": "error", "message": "invalid passphrase"}), 400
+
         keypair = get_keypair_from_mnemonic(passphrase)
         public_key = keypair.public_key
         balance = get_balances(public_key)
+
+        if balance is None:
+            return jsonify({"status": "error", "message": "could not fetch balance"}), 500
+
         return jsonify({"status": "success", "balance": balance}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
