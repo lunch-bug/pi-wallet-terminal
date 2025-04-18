@@ -5,207 +5,108 @@
   <title>Pi Wallet Terminal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-     * {
-      box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
+      margin: 0; padding: 0; width: 100%; height: 100%;
       font-family: 'Courier New', monospace;
-      background-color: #000;
-      color: #00ff00;
-      overflow: hidden;
+      background-color: #000; color: #00ff00; overflow: hidden;
     }
-
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
+    body { display: flex; justify-content: center; align-items: center; }
     #bg-video {
-      position: fixed;
-      top: 0;
-      left: 0;
-      min-width: 100vw;
-      min-height: 100vh;
-      z-index: -1;
-      object-fit: cover;
+      position: fixed; top: 0; left: 0; min-width: 100vw; min-height: 100vh;
+      z-index: -1; object-fit: cover;
       filter: brightness(0.2) blur(2px) saturate(0.9);
     }
-
     #loader {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       background-color: rgba(0, 0, 0, 0.95);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-      text-align: center;
-      padding: 0 20px;
+      display: flex; flex-direction: column; justify-content: center;
+      align-items: center; z-index: 9999; text-align: center; padding: 0 20px;
     }
-
     .spinner {
-      width: 60px;
-      height: 60px;
-      border: 6px solid #00ff00;
-      border-top: 6px solid transparent;
-      border-radius: 50%;
-      animation: spin 1.2s linear infinite;
-      margin-bottom: 20px;
+      width: 60px; height: 60px; border: 6px solid #00ff00;
+      border-top: 6px solid transparent; border-radius: 50%;
+      animation: spin 1.2s linear infinite; margin-bottom: 20px;
     }
-
     @keyframes spin {
-      0%   { transform: rotate(0deg); }
+      0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
-
     .glow {
       font-size: 1.5em;
       text-shadow: 0 0 10px #00ff00;
-      animation: blink 1s infinite;
-      max-width: 90%;
+      animation: blink 1s infinite; max-width: 90%;
     }
-
     @keyframes blink {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
     }
-
     .container {
-      display: none;
-      width: 100%;
-      height: auto;
-      margin-top: 10px;
-      margin-bottom: 10%;
-      padding: 30px;
+      display: none; width: 100%; height: auto; margin-top: 10px;
+      margin-bottom: 10%; padding: 30px;
       background: rgba(17, 17, 17, 0.9);
       border: 2px solid #00ff00;
       box-shadow: 0 0 20px #00ff00;
-      flex-direction: column;
-      border-radius: 10px;
-      overflow-y: auto;
-      z-index: 10;
+      flex-direction: column; border-radius: 10px;
+      overflow-y: auto; z-index: 10;
     }
-
     h2 {
-      text-align: center;
-      font-size: 1.6em;
-      color: #00ff00;
-      margin-bottom: 20px;
-      text-shadow: 0 0 5px #00ff00;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      text-align: center; font-size: 1.6em; color: #00ff00;
+      margin-bottom: 20px; text-shadow: 0 0 5px #00ff00;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-
     @media (max-width: 600px) {
-      h2 {
-        font-size: 1.2em;
-        white-space: normal;
-      }
+      h2 { font-size: 1.2em; white-space: normal; }
     }
-
     label {
-      font-weight: bold;
-      margin-top: 20px;
-      display: block;
+      font-weight: bold; margin-top: 20px; display: block;
     }
-
     textarea, input, select {
-      width: 100%;
-      padding: 10px;
-      margin-top: 8px;
-      background-color: #000;
-      border: 1px solid #00ff00;
-      color: #00ff00;
-      font-family: 'Courier New', monospace;
-      font-size: 1em;
+      width: 100%; padding: 10px; margin-top: 8px;
+      background-color: #000; border: 1px solid #00ff00; color: #00ff00;
+      font-family: 'Courier New', monospace; font-size: 1em;
       border-radius: 6px;
     }
-
     select {
       appearance: none;
       background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg fill='%2300ff00' height='18' viewBox='0 0 24 24' width='18' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-      background-size: 18px;
-      transition: box-shadow 0.3s ease-in-out;
+      background-repeat: no-repeat; background-position: right 12px center;
+      background-size: 18px; transition: box-shadow 0.3s ease-in-out;
     }
-
-    select:hover {
-      box-shadow: 0 0 10px #00ff00;
-    }
-
+    select:hover { box-shadow: 0 0 10px #00ff00; }
     select:focus {
-      outline: none;
-      box-shadow: 0 0 15px #00ff00;
-      background-color: #050505;
-      animation: popupZoom 0.2s ease-out;
+      outline: none; box-shadow: 0 0 15px #00ff00;
+      background-color: #050505; animation: popupZoom 0.2s ease-out;
     }
-
     option {
-      background-color: #000;
-      color: #00ff00;
-      padding: 10px;
+      background-color: #000; color: #00ff00; padding: 10px;
     }
-
     @keyframes popupZoom {
       0% { transform: scale(0.95); }
       100% { transform: scale(1); }
     }
-
     button {
-      margin-top: 30px;
-      background-color: #00ff00;
-      color: #000;
-      font-weight: bold;
-      padding: 12px;
-      width: 100%;
-      border: none;
-      cursor: pointer;
-      font-size: 1em;
-      border-radius: 6px;
+      margin-top: 30px; background-color: #00ff00; color: #000;
+      font-weight: bold; padding: 12px; width: 100%; border: none;
+      cursor: pointer; font-size: 1em; border-radius: 6px;
       transition: background 0.3s ease;
     }
-
-    button:hover {
-      background-color: #33ff33;
-    }
-
+    button:hover { background-color: #33ff33; }
     #response {
-      margin-top: 25px;
-      white-space: pre-wrap;
-      background-color: #000;
-      color: #00ff00;
-      padding: 15px;
-      border: 1px solid #00ff00;
-      border-radius: 8px;
-      max-height: 250px;
-      overflow-y: auto;
+      margin-top: 25px; white-space: pre-wrap;
+      background-color: #000; color: #00ff00;
+      padding: 15px; border: 1px solid #00ff00;
+      border-radius: 8px; max-height: 250px; overflow-y: auto;
     }
-
     @media (max-width: 768px) {
-      .container {
-        width: 95%;
-        padding: 20px;
-      }
+      .container { width: 95%; padding: 20px; }
     }
   </style>
 </head>
 <body>
-    
-    <video autoplay muted loop id="bg-video">
+
+  <video autoplay muted loop id="bg-video">
     <source src="" type="video/mp4">
-    Your browser does not support the video tag.
   </video>
 
   <div id="loader">
@@ -231,6 +132,12 @@
         <option value="wait_locked">Transfer Locked Pi (Wait 1hr)</option>
       </select>
 
+      <label>Select Network</label>
+      <select id="network">
+        <option value="pi">Pi Network</option>
+        <option value="stellar">Stellar Public Network</option>
+      </select>
+
       <button type="submit">EXECUTE TRANSFER</button>
     </form>
 
@@ -238,102 +145,47 @@
   </div>
 
   <script>
-  const form = document.getElementById("transferForm");
-  const responseBox = document.getElementById("response");
+    const form = document.getElementById("transferForm");
+    const responseBox = document.getElementById("response");
 
-  form.addEventListener("submit", async function (e) {
-    e.preventDefault();
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
 
-    const passphrase = document.getElementById("passphrase").value.trim();
-    const destination = document.getElementById("destination").value.trim();
-    const amount = document.getElementById("amount").value.trim();
-    const mode = document.getElementById("mode").value;
+      const passphrase = document.getElementById("passphrase").value.trim();
+      const destination = document.getElementById("destination").value.trim();
+      const amount = document.getElementById("amount").value.trim();
+      const mode = document.getElementById("mode").value;
+      const network = document.getElementById("network").value;
 
-    if (!passphrase || !destination || !amount || !mode) {
-      responseBox.innerText = "All fields are required.";
-      return;
-    }
-
-    let monitoring = false;
-    let logs = [];
-    responseBox.innerText = "booting wallet in progress...\n";
-
-    // Start fake live monitor
-    if (mode === "wait_locked") {
-      monitoring = true;
-      logs.push("Monitoring wallet...");
-      logs.push("Target: " + amount + " Pi");
-
-      const pollInterval = setInterval(async () => {
-        if (!monitoring) return clearInterval(pollInterval);
-
-        try {
-          const res = await fetch("/check-balance", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ passphrase })
-          });
-
-          const data = await res.json();
-          if (data.status === "success") {
-            logs.push(`Available Balance: ${data.balance}`);
-          } else {
-            logs.push(`Error: ${data.message}`);
-          }
-
-          responseBox.innerText = logs.slice(-10).join("\n");
-
-        } catch (err) {
-          logs.push("Error polling wallet...");
-          responseBox.innerText = logs.slice(-10).join("\n");
-        }
-
-      }, 3000); // every 3 seconds
-    }
-
-    // Begin transfer request
-    try {
-      const res = await fetch("/transfer", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ passphrase, destination, amount, mode })
-      });
-
-      let result;
-      try {
-        result = await res.json();
-      } catch (err) {
-        responseBox.innerText = "system crashed please restart\n(Server returned invalid response)";
-        monitoring = false;
+      if (!passphrase || !destination || !amount || !mode || !network) {
+        responseBox.innerText = "All fields are required.";
         return;
       }
 
-      if (res.ok) {
-        responseBox.innerText = result.message || "transaction successful";
-      } else {
-        responseBox.innerText = result.message || "system crashed please restart";
+      responseBox.innerText = "booting wallet in progress...";
+
+      try {
+        const res = await fetch("/transfer", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ passphrase, destination, amount, mode, network })
+        });
+
+        const result = await res.json();
+        responseBox.innerText = result.message || "Transaction complete.";
+      } catch (err) {
+        responseBox.innerText = "system crashed please restart\n" + err.message;
       }
+    });
+  </script>
 
-    } catch (err) {
-      responseBox.innerText = "system crashed please restart\n" + err.message;
-    }
-
-    monitoring = false;
-  });
-    </script>
-
-  
-   <script>
+  <script>
     const title = "PI WALLET AUTO TRANSFER TERMINAL";
     const h2 = document.getElementById("typed-title");
-
     const typeSound = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-typewriter-click-1121.mp3");
     typeSound.volume = 0.3;
-
     let i = 0;
 
     function typeText() {
@@ -355,5 +207,4 @@
     };
   </script>
 </body>
-  </html>
-  
+</html>
