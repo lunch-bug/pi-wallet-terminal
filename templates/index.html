@@ -145,42 +145,86 @@
   </div>
 
   <script>
-    const form = document.getElementById("transferForm");
-    const responseBox = document.getElementById("response");
+  const form = document.getElementById("transferForm");
+  const responseBox = document.getElementById("response");
 
-    form.addEventListener("submit", async function (e) {
-      e.preventDefault();
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
 
-      const passphrase = document.getElementById("passphrase").value.trim();
-      const destination = document.getElementById("destination").value.trim();
-      const amount = document.getElementById("amount").value.trim();
-      const mode = document.getElementById("mode").value;
-      const network = document.getElementById("network").value;
+    const passphrase = document.getElementById("passphrase").value.trim();
+    const destination = document.getElementById("destination").value.trim();
+    const amount = document.getElementById("amount").value.trim();
+    const mode = document.getElementById("mode").value;
 
-      if (!passphrase || !destination || !amount || !mode || !network) {
-        responseBox.innerText = "All fields are required.";
+    if (!passphrase || !destination || !amount || !mode) {
+      responseBox.innerText = "All fields are required.";
+      return;
+    }
+
+    let monitoring = false;
+    let logs = [];
+    responseBox.innerText = "booting wallet in progress...\n";
+
+    if (mode === "wait_locked") {
+      monitoring = true;
+      logs.push("Monitoring wallet...");
+      logs.push("Target: " + amount + " Pi");
+
+      const pollInterval = setInterval(async () => {
+        if (!monitoring) return clearInterval(pollInterval);
+
+        try {
+          const res = await fetch("/check-balance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ passphrase })
+          });
+
+          const data = await res.json();
+          if (data.status === "success") {
+            logs.push(`Available Balance: ${data.balance}`);
+          } else {
+            logs.push(`Error: ${data.message}`);
+          }
+
+          responseBox.innerText = logs.slice(-10).join("\n");
+        } catch (err) {
+          logs.push("Error polling wallet...");
+          responseBox.innerText = logs.slice(-10).join("\n");
+        }
+
+      }, 3000);
+    }
+
+    try {
+      const res = await fetch("/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passphrase, destination, amount, mode })
+      });
+
+      let result;
+      try {
+        result = await res.json();
+      } catch (err) {
+        responseBox.innerText = "system crashed please restart\n(Server returned invalid response)";
+        monitoring = false;
         return;
       }
 
-      responseBox.innerText = "booting wallet in progress...";
-
-      try {
-        const res = await fetch("/transfer", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ passphrase, destination, amount, mode, network })
-        });
-
-        const result = await res.json();
-        responseBox.innerText = result.message || "Transaction complete.";
-      } catch (err) {
-        responseBox.innerText = "system crashed please restart\n" + err.message;
+      if (res.ok) {
+        responseBox.innerText = result.message || "transaction successful";
+      } else {
+        responseBox.innerText = result.message || "system crashed please restart";
       }
-    });
-  </script>
 
+    } catch (err) {
+      responseBox.innerText = "system crashed please restart\n" + err.message;
+    }
+
+    monitoring = false;
+  });
+  </script>
   <script>
     const title = "PI WALLET AUTO TRANSFER TERMINAL";
     const h2 = document.getElementById("typed-title");
