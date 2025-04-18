@@ -32,7 +32,7 @@ def get_balances(public_key):
             if bal.asset_type == "native":
                 return float(bal.balance)
         return 0.0
-    except:
+    except Exception:
         return None
 
 def get_wallet_lock(wallet):
@@ -77,7 +77,9 @@ def transfer():
             try:
                 if mode == "unlocked":
                     balance = get_balances(public_key)
-                    if balance is None or balance < amount:
+                    if balance is None:
+                        return jsonify({"status": "error", "message": "could not read balance"}), 500
+                    if balance < amount:
                         return jsonify({"status": "error", "message": "insufficient Pi"}), 400
                     return send_transaction(public_key, secret_key, destination, amount)
 
@@ -92,6 +94,12 @@ def transfer():
 
                 return jsonify({"status": "error", "message": "invalid transfer mode"}), 400
 
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "message": "system crashed please restart",
+                    "debug": str(e)
+                }), 500
             finally:
                 wallet_lock.release()
 
@@ -117,7 +125,11 @@ def send_transaction(public_key, secret_key, destination, amount):
         result = server.submit_transaction(tx)
         return jsonify({"status": "success", "message": "transaction successful", "tx": result}), 200
     except Exception as e:
-        return jsonify({"status": "error", "message": "system crashed please restart", "debug": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": "system crashed please restart",
+            "debug": str(e)
+        }), 500
 
 @app.route("/check-balance", methods=["POST"])
 def check_balance():
